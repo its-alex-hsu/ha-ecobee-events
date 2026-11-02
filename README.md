@@ -52,7 +52,7 @@ it into entities.
 
 ## Entities
 
-All three exclude any event of type `hold` - the one seen in the field is
+The three original utility entities exclude any event of type `hold` - the one seen in the field is
 `hold` / `auto`, which Home Assistant surfaces as `preset_mode: temp`. It is an
 ordinary setpoint hold, not a curtailment, and letting it trip these entities
 would make them useless. The match is on the type alone, never on the name, so
@@ -63,6 +63,59 @@ A "utility event" here means any event whose `type` starts with `tou`
 (case-insensitive), or whose type is exactly `demandResponse`. Both are matched
 because `touPrecool` / `touSetback` is what is actually observed in the field,
 while `demandResponse` is the type the API documents for the same purpose.
+
+### Local hold-reporting enhancement
+
+This checkout is based on upstream commit
+`bf4b79c1d30ee94022fb56b3f7984c815c81a857`. It adds a read-only
+`Ecobee Hold Status` sensor without changing the existing utility entities.
+It is a fork-specific enhancement, not an upstream release. Install this fork
+at a reviewed commit; do not switch HACS back to upstream until equivalent
+hold reporting is available there.
+
+The new sensor reports the first `running: true` event in native API priority
+order: `hold`, `vacation`, `other` (for example a utility or smart-away event),
+or `none` when no event is flagged running. `none` does not mean the event
+array contains no queued holds. `hold_present` and `vacation_present` describe
+records in the array, including queued or lower-priority records.
+
+Attributes include `hold_events`, `vacation_events`, and `current_event`,
+containing complete native objects, including fan settings, setpoints in
+tenths of a degree Fahrenheit, climate references, and indefinite/end fields.
+The lists retain native order. Split date/time fields remain in the
+thermostat's local time; no Home Assistant timezone is assumed.
+`isIndefinite: true` takes precedence over any placeholder end fields.
+
+The sensor is unavailable, rather than reporting no hold, when the configured
+thermostat is missing, `utcTime` is absent/unparseable/in the future, data is
+older than ten minutes, or event data is malformed. `data_status` explains the
+reason; `source_data_updated` is always the upstream `utcTime`, never the time
+we inspected the cache. `lastModified` is not used as a freshness substitute.
+Existing utility-entity fallback and staleness behavior is unchanged.
+
+The sensor cannot identify who created a hold. Event names such as `auto` and
+matching scheduled temperatures are not ownership evidence. Nothing in this
+enhancement creates, changes, or resumes a hold, sends a notification, or
+changes an automation.
+
+Sources: [Ecobee event priority, fields, and local-time semantics](https://www.ecobee.com/home/developer/api/documentation/v1/objects/Event.shtml)
+and [Core's Ecobee cache access path at 2026.10.4](https://github.com/home-assistant/core/blob/2026.10.4/homeassistant/components/ecobee/__init__.py).
+
+Before installation, run the focused offline checks:
+
+```sh
+python3 -m unittest discover -s tests -v
+python3 -m compileall -q custom_components
+ruff check custom_components/ecobee_events/holds.py tests
+ruff format --check custom_components/ecobee_events/holds.py tests
+```
+
+Install development tools from `requirements-dev.txt` in a virtual environment.
+These checks do not prove live compatibility. After separately approved
+installation, compare the new sensor with actual temporary and indefinite
+holds and a real schedule resumption. Verify vacation priority when a
+vacation is actually available; do not create one just to test reporting.
+Confirm the three utility entities retain their prior behavior.
 
 ### `binary_sensor.ecobee_utility_event_active`
 

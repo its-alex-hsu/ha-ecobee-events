@@ -47,6 +47,7 @@ from .const import (
     UTILITY_EVENT_PREFIX,
     UTILITY_EVENT_TYPES,
 )
+from .holds import HoldReport, build_hold_report
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -317,6 +318,7 @@ class EcobeeEventsData:
     permanent_hold_started: str | None
     permanent_hold_cool_f: float | None
     permanent_hold_heat_f: float | None
+    hold_report: HoldReport
 
     @property
     def diagnostics(self) -> dict[str, Any]:
@@ -443,6 +445,18 @@ class EcobeeEventsCoordinator(DataUpdateCoordinator[EcobeeEventsData]):
             self._clear_warning("wrong_identifier")
             self._clear_warning("missing_identifier")
 
+        hold_report = build_hold_report(
+            thermostat, self.identifier, dt_util.utcnow(), STALE_AFTER
+        )
+        if not hold_report.available:
+            self._warn_once(
+                "hold_report",
+                "Ecobee hold reporting is unavailable: %s",
+                hold_report.status,
+            )
+        else:
+            self._clear_warning("hold_report")
+
         now = dt_util.now()
 
         # Staleness. pyecobee leaves self.thermostats untouched when a request
@@ -568,6 +582,7 @@ class EcobeeEventsCoordinator(DataUpdateCoordinator[EcobeeEventsData]):
             permanent_hold_started=hold_started,
             permanent_hold_cool_f=hold_cool,
             permanent_hold_heat_f=hold_heat,
+            hold_report=hold_report,
         )
 
 

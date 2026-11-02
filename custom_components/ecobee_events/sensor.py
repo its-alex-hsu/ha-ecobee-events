@@ -19,7 +19,45 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the ecobee active event sensor."""
-    async_add_entities([EcobeeActiveEventSensor(entry.runtime_data)])
+    async_add_entities(
+        [
+            EcobeeActiveEventSensor(entry.runtime_data),
+            EcobeeHoldStatusSensor(entry.runtime_data),
+        ]
+    )
+
+
+class EcobeeHoldStatusSensor(EcobeeEventsEntity, SensorEntity):
+    """Report native overrides without claiming to know who created them."""
+
+    _attr_icon = "mdi:hand-back-right"
+
+    def __init__(self, coordinator: EcobeeEventsCoordinator) -> None:
+        """Initialise the hold report independently of utility-event filtering."""
+        super().__init__(coordinator, "hold_status", "Ecobee Hold Status")
+
+    @property
+    def available(self) -> bool:
+        """Missing identity, freshness, or valid events must not mean no hold."""
+        data = self._data
+        return data is not None and data.hold_report.available
+
+    @property
+    def native_value(self) -> str | None:
+        """Return hold, vacation, other, or none for a trustworthy snapshot."""
+        data = self._data
+        return data.hold_report.state if data else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose complete hold/vacation objects in native priority order."""
+        data = self._data
+        if data is None:
+            return {"data_status": "source_unavailable"}
+        return {
+            **data.hold_report.attributes,
+            "data_status": data.hold_report.status,
+        }
 
 
 class EcobeeActiveEventSensor(EcobeeEventsEntity, SensorEntity):
